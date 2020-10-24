@@ -32,8 +32,6 @@ jsonSchemaTypes {
 }
 ```
 
-You will need to teach Gradle how to find the plugin in Jitpack.
-
 To your `settings.gradle` file, under `pluginManagement`, make sure JitPack is
 listed as a repository, and add a custom `resolutionStrategy`.
 
@@ -42,14 +40,6 @@ pluginManagement {
     repositories {
         maven { url "https://jitpack.io" }
         //...
-    }
-
-    resolutionStrategy {
-        eachPlugin {
-            if (requested.id.namespace == "net.jimblackler") {
-                useModule("net.jimblackler.${requested.id.name}:plugin:${requested.version}")
-            }
-        }
     }
 }
 ```
