@@ -11,13 +11,13 @@ It is a client of the underlying jsonschematypes Java library.
 
 These instructions have been tested on IntellJ IDEA, and Android Studio.
 
-Add `id 'net.jimblackler.jsonschematypes' version '0.7.14'` to the *plugins*
+Add `id 'net.jimblackler.jsonschematypes' version '0.8.0'` to the *plugins*
 section in your module's `build.gradle`.
 
 ```groovy
 plugins {
     //...
-    id 'net.jimblackler.jsonschematypes' version '0.7.14'
+    id 'net.jimblackler.jsonschematypes' version '0.8.0'
     //...
 }
 ```
