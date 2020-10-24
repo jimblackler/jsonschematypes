@@ -70,7 +70,7 @@ dependencies {
 # Usage
 
 Javadocs can be found
-[here](https://javadoc.jitpack.io/com/github/jimblackler/jsonschematypes/jsonschemafriend/0.7.12/javadoc/net/jimblackler/jsonschemafriend/package-summary.html).
+[here](https://javadoc.jitpack.io/com/github/jimblackler/jsonschematypes/jsonschemafriend/0.7.14/javadoc/net/jimblackler/jsonschemafriend/package-summary.html).
 
 ## Via a JSONObject.
 
