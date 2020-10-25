@@ -18,7 +18,6 @@ section in your module's `build.gradle`.
 plugins {
     //...
     id 'net.jimblackler.jsonschematypes' version '0.8.1'
-    //...
 }
 ```
 
@@ -33,7 +32,7 @@ jsonSchemaTypes {
 ```
 
 To your `settings.gradle` file, under `pluginManagement`, make sure JitPack is
-listed as a repository, and add a custom `resolutionStrategy`.
+listed as a repository.
 
 ```groovy
 pluginManagement {
