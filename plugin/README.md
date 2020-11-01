@@ -18,7 +18,6 @@ section in your module's `build.gradle`.
 plugins {
     //...
     id 'net.jimblackler.jsonschematypes' version '0.8.1'
-    //...
 }
 ```
 
@@ -32,24 +31,14 @@ jsonSchemaTypes {
 }
 ```
 
-You will need to teach Gradle how to find the plugin in Jitpack.
-
 To your `settings.gradle` file, under `pluginManagement`, make sure JitPack is
-listed as a repository, and add a custom `resolutionStrategy`.
+listed as a repository.
 
 ```groovy
 pluginManagement {
     repositories {
         maven { url "https://jitpack.io" }
         //...
-    }
-
-    resolutionStrategy {
-        eachPlugin {
-            if (requested.id.namespace == "net.jimblackler") {
-                useModule("net.jimblackler.${requested.id.name}:plugin:${requested.version}")
-            }
-        }
     }
 }
 ```
