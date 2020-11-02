@@ -6,8 +6,8 @@ plugins {
 sourceCompatibility = JavaVersion.VERSION_1_8
 targetCompatibility = JavaVersion.VERSION_1_8
 
-group = 'net.jimblackler'
-version = '0.8.1'
+group = 'net.jimblackler.jsonschematypes'
+version = '0.8.2'
 
 dependencies {
     implementation project(path: ':codegen')
