@@ -34,6 +34,7 @@ import org.json.JSONObject;
 public class JavaBuilder {
   private final JDefinedClass jDefinedClass;
   private final String _name;
+  private final Collection<AbstractJType> compatibleTypes = new ArrayList<>();
   private final AbstractJType dataType;
   private final List<JEnumConstant> enumConstants = new ArrayList<>();
   private final Schema schema;
@@ -48,13 +49,13 @@ public class JavaBuilder {
 
     Collection<String> types = combinedSchema.getInferredTypes();
 
-    if (types.size() == 1) {
-      switch (types.iterator().next()) {
+    for (String type : types) {
+      switch (type) {
         case "array":
-          dataType = jCodeModel.ref(JSONArray.class);
+          compatibleTypes.add(jCodeModel.ref(JSONArray.class));
           break;
         case "boolean":
-          dataType = jCodeModel.BOOLEAN;
+          compatibleTypes.add(jCodeModel.BOOLEAN);
           break;
         case "integer":
           Number minimumObject = schema.getMinimum();
@@ -62,30 +63,28 @@ public class JavaBuilder {
           Number maximumObject = schema.getMinimum();
           long maximum = maximumObject == null ? Long.MAX_VALUE : maximumObject.longValue();
           if (minimum >= Integer.MIN_VALUE && maximum <= Integer.MAX_VALUE) {
-            dataType = jCodeModel.INT;
+            compatibleTypes.add(jCodeModel.INT);
           } else {
             // JSON Schema's definition of an integer is not the same as Java's.
             // Specifically, values over 2^32 are supported. We use a Java Long.
-            dataType = jCodeModel.LONG;
+            compatibleTypes.add(jCodeModel.LONG);
           }
           break;
         case "null":
-          dataType = jCodeModel.NULL;
+          compatibleTypes.add(jCodeModel.NULL);
           break;
         case "number":
-          dataType = jCodeModel.ref(Number.class);
+          compatibleTypes.add(jCodeModel.ref(Number.class));
           break;
         case "object":
-          dataType = jCodeModel.ref(JSONObject.class);
+          compatibleTypes.add(jCodeModel.ref(JSONObject.class));
           break;
         case "string":
-          dataType = jCodeModel.ref(String.class);
+          compatibleTypes.add(jCodeModel.ref(String.class));
           break;
         default:
           throw new IllegalStateException();
       }
-    } else {
-      dataType = jCodeModel.ref(Object.class);
     }
 
     Schema parentSchema = schema.getParent();
@@ -97,11 +96,14 @@ public class JavaBuilder {
       classParent = definedClass == null ? jPackage : definedClass;
     }
 
+    dataType = compatibleTypes.size() == 1 ? compatibleTypes.iterator().next()
+                                           : jCodeModel.ref(Object.class);
+
     String name = nameForSchema(schema);
     boolean isComplexObject = dataType.equals(jCodeModel.ref(JSONObject.class))
         && !combinedSchema.getProperties().isEmpty();
     boolean isArray = dataType.equals(jCodeModel.ref(JSONArray.class));
-    if (isComplexObject || dataType.equals(jCodeModel.ref(Object.class)) || isArray) {
+    if (isComplexObject || isArray) {
       JDefinedClass _class = makeClassForSchema(name,
           (name12)
               -> classParent._class(
@@ -146,7 +148,7 @@ public class JavaBuilder {
       /* Getter */
       JMethod getter = jDefinedClass.method(JMod.PUBLIC, dataType,
           (dataType.equals(jCodeModel.BOOLEAN) ? "is" : "get") + dataType.name());
-      getter.body()._return(dataField);
+      getter.body()._return(castIfNeeded(dataType, dataType, dataField));
 
       for (Map.Entry<String, Schema> entry : combinedSchema.getProperties().entrySet()) {
         Schema propertySchema = entry.getValue();
@@ -246,7 +248,7 @@ public class JavaBuilder {
 
   private static IJExpression castIfNeeded(
       AbstractJType requiredType, AbstractJType sourceType, IJExpression source) {
-    return sourceType.equals(requiredType) ? source : source.castTo(requiredType);
+    return requiredType.isAssignableFrom(sourceType) ? source : source.castTo(requiredType);
   }
 
   private static String getOptOrGet(boolean get, AbstractJType dataType, JCodeModel jCodeModel) {
@@ -282,30 +284,50 @@ public class JavaBuilder {
 
   private void writePropertyGetters(boolean requiredProperty, IJExpression defaultValue,
       JDefinedClass holderClass, JFieldVar dataField, String propertyName, JCodeModel jCodeModel) {
-    IJExpression asJsonObject =
-        castIfNeeded(jCodeModel.ref(JSONObject.class), dataField.type(), dataField);
-    String nameForGetters = NameUtils.snakeToCamel(propertyName);
-    AbstractJType returnType = jDefinedClass == null ? dataType : jDefinedClass;
-    JMethod getter = holderClass.method(JMod.PUBLIC, returnType,
-        (returnType.equals(jCodeModel.BOOLEAN) ? "is" : "get") + nameForGetters);
     boolean isGet = defaultValue == null;
-    JInvocation getObject =
-        JExpr.invoke(asJsonObject, getOptOrGet(isGet, dataType, jCodeModel)).arg(propertyName);
-    if (defaultValue != null && !defaultValue.equals(JExpr.lit(false))) {
-      getObject.arg(defaultValue);
+    String nameForGetters = NameUtils.snakeToCamel(propertyName);
+    IJExpression dataFieldAsJsonObject =
+        castIfNeeded(jCodeModel.ref(JSONObject.class), dataField.type(), dataField);
+    if (jDefinedClass == null) {
+      if (compatibleTypes.size() == 1) {
+        writerPropertyGettersSingle(jCodeModel, holderClass, propertyName, defaultValue, isGet,
+            nameForGetters, dataFieldAsJsonObject, compatibleTypes.iterator().next(), "");
+      } else {
+        for (AbstractJType dataType : compatibleTypes) {
+          writerPropertyGettersSingle(jCodeModel, holderClass, propertyName, defaultValue, isGet,
+              nameForGetters, dataFieldAsJsonObject, dataType, dataType.name());
+        }
+      }
+    } else {
+      writerPropertyGettersSingle(jCodeModel, holderClass, propertyName, defaultValue, isGet,
+          nameForGetters, dataFieldAsJsonObject, dataField.type(), "");
     }
-    JBlock body = getter.body();
-    makeReturn(jCodeModel, dataType, getObject, body);
-
     if (!requiredProperty && isGet) {
       JMethod has = holderClass.method(JMod.PUBLIC, jCodeModel.BOOLEAN, "has" + nameForGetters);
-      has.body()._return(JExpr.invoke(asJsonObject, "has").arg(propertyName));
+      has.body()._return(JExpr.invoke(dataFieldAsJsonObject, "has").arg(propertyName));
     }
   }
 
-  private void makeReturn(
-      JCodeModel jCodeModel, AbstractJType sourceType, JInvocation source, JBlock body) {
+  private void writerPropertyGettersSingle(JCodeModel jCodeModel, JDefinedClass holderClass,
+      String propertyName, IJExpression defaultValue, boolean isGet, String nameForGetters,
+      IJExpression dataFieldAsJsonObject, AbstractJType dataType, String qualifier) {
     AbstractJType returnType = jDefinedClass == null ? dataType : jDefinedClass;
+    JMethod getter = holderClass.method(JMod.PUBLIC, returnType,
+        (returnType.equals(jCodeModel.BOOLEAN) ? "is" : "get") + nameForGetters + qualifier);
+    JInvocation getObject =
+        JExpr
+            .invoke(dataFieldAsJsonObject,
+                getOptOrGet(isGet, jDefinedClass == null ? dataType : this.dataType, jCodeModel))
+            .arg(propertyName);
+    if (defaultValue != null && !defaultValue.equals(JExpr.lit(false))) {
+      getObject.arg(defaultValue);
+    }
+    makeReturn(jCodeModel, getObject, dataType, jDefinedClass == null ? dataType : jDefinedClass,
+        getter.body());
+  }
+
+  private void makeReturn(JCodeModel jCodeModel, IJExpression source, AbstractJType sourceType,
+      AbstractJType returnType, JBlock body) {
     if (jDefinedClass == null) {
       IJExpression toReturn;
       if (sourceType.equals(returnType)) {
@@ -336,12 +358,32 @@ public class JavaBuilder {
 
   private void writeItemGetters(JDefinedClass holderClass, int fixedPosition, JFieldVar dataField,
       JCodeModel jCodeModel, IJExpression defaultValue) {
-    IJExpression asJsonArray =
+    IJExpression dataFieldAsJsonArray =
         castIfNeeded(jCodeModel.ref(JSONArray.class), dataField.type(), dataField);
+
+    if (jDefinedClass == null) {
+      if (compatibleTypes.size() == 1) {
+        writeItemGettersSingle(jCodeModel, holderClass, defaultValue, fixedPosition,
+            dataFieldAsJsonArray, compatibleTypes.iterator().next(), "");
+      } else {
+        for (AbstractJType dataType : compatibleTypes) {
+          writeItemGettersSingle(jCodeModel, holderClass, defaultValue, fixedPosition,
+              dataFieldAsJsonArray, dataType, dataType.name());
+        }
+      }
+    } else {
+      writeItemGettersSingle(jCodeModel, holderClass, defaultValue, fixedPosition,
+          dataFieldAsJsonArray, dataField.type(), "");
+    }
+  }
+
+  private void writeItemGettersSingle(JCodeModel jCodeModel, JDefinedClass holderClass,
+      IJExpression defaultValue, int fixedPosition, IJExpression dataFieldAsJsonArray,
+      AbstractJType dataType, String supplement) {
     String nameForGetters = _name;
     AbstractJType returnType = jDefinedClass == null ? dataType : jDefinedClass;
     JMethod getter = holderClass.method(JMod.PUBLIC, returnType,
-        (returnType.equals(jCodeModel.BOOLEAN) ? "is" : "get") + nameForGetters);
+        (returnType.equals(jCodeModel.BOOLEAN) ? "is" : "get") + nameForGetters + supplement);
     IJExpression positionSource;
     if (fixedPosition == -1) {
       positionSource = getter.param(jCodeModel.INT, "index");
@@ -351,7 +393,10 @@ public class JavaBuilder {
 
     boolean isGet = defaultValue == null;
     JInvocation getObject =
-        JExpr.invoke(asJsonArray, getOptOrGet(isGet, dataType, jCodeModel)).arg(positionSource);
+        JExpr
+            .invoke(dataFieldAsJsonArray,
+                getOptOrGet(isGet, jDefinedClass == null ? dataType : this.dataType, jCodeModel))
+            .arg(positionSource);
     if (defaultValue != null && !defaultValue.equals(JExpr.lit(false))) {
       getObject.arg(defaultValue);
     }
@@ -361,19 +406,21 @@ public class JavaBuilder {
       getter.body()._return(JExpr._new(jDefinedClass).arg(getObject));
     }
 
-    holderClass._implements(jCodeModel.ref(Iterable.class).narrow(returnType));
-    AbstractJClass iteratorType = jCodeModel.ref(Iterator.class).narrow(returnType);
-    JMethod iteratorMethod = holderClass.method(JMod.PUBLIC, iteratorType, "iterator");
-    JDefinedClass iteratorAnonClass = jCodeModel.anonymousClass(iteratorType);
-    JVar nativeIterator =
-        iteratorMethod.body().decl(jCodeModel.ref(Iterator.class).narrow(Object.class), "iterator",
-            JExpr.invoke(asJsonArray, "iterator"));
-    iteratorAnonClass.method(JMod.PUBLIC, jCodeModel.BOOLEAN, "hasNext")
-        .body()
-        ._return(JExpr.invoke(nativeIterator, "hasNext"));
-
-    makeReturn(jCodeModel, jCodeModel.ref(Object.class), JExpr.invoke(nativeIterator, "next"),
-        iteratorAnonClass.method(JMod.PUBLIC, returnType.boxify(), "next").body());
-    iteratorMethod.body()._return(JExpr._new(iteratorAnonClass));
+    if (supplement.isEmpty()) {
+      holderClass._implements(jCodeModel.ref(Iterable.class).narrow(returnType));
+      AbstractJClass iteratorType = jCodeModel.ref(Iterator.class).narrow(returnType);
+      JMethod iteratorMethod = holderClass.method(JMod.PUBLIC, iteratorType, "iterator");
+      JDefinedClass iteratorAnonClass = jCodeModel.anonymousClass(iteratorType);
+      JVar nativeIterator =
+          iteratorMethod.body().decl(jCodeModel.ref(Iterator.class).narrow(Object.class),
+              "iterator", JExpr.invoke(dataFieldAsJsonArray, "iterator"));
+      iteratorAnonClass.method(JMod.PUBLIC, jCodeModel.BOOLEAN, "hasNext")
+          .body()
+          ._return(JExpr.invoke(nativeIterator, "hasNext"));
+      makeReturn(jCodeModel, JExpr.invoke(nativeIterator, "next"), jCodeModel.ref(Object.class),
+          jDefinedClass == null ? dataType : jDefinedClass,
+          iteratorAnonClass.method(JMod.PUBLIC, returnType.boxify(), "next").body());
+      iteratorMethod.body()._return(JExpr._new(iteratorAnonClass));
+    }
   }
 }
