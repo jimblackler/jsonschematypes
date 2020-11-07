@@ -32,12 +32,13 @@ jsonSchemaTypes {
 ```
 
 To your `settings.gradle` file, at the top of the file under `pluginManagement`, make sure JitPack is
-listed as a repository.
+listed as a repository, as well `mavenCentral()` for some of the library's dependencies.
 
 ```groovy
 pluginManagement {
     repositories {
         maven { url "https://jitpack.io" }
+        mavenCentral()
         //...
     }
 }
