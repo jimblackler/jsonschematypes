@@ -9,7 +9,7 @@
   the jsonschematypes library. Click the link for details on how to use `jsonschematypes`
   in your own Gradle projects, e.g. in IntellJ IDEA or Android Studio projects.
 
-An online demonstration [is here](https://tryjsonschematypes.appspot.com/).
+An online demonstration [is here](https://tryjsonschematypes.appspot.com/#java).
 
 Written by jimblackler@gmail.com and offered under an
 [Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0).
