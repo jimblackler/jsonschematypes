@@ -52,7 +52,6 @@ in your Gradle or Maven-based Java project.
 
 [![](https://jitpack.io/v/net.jimblackler/jsonschematypes.svg)](https://jitpack.io/#net.jimblackler/jsonschematypes)
 
-
 # Example
 
 The following JSON schema...
@@ -118,8 +117,8 @@ the presence of that property on an object, since a value can always be
 returned. The effect of this is that changes to the schema could result in
 methods being removecd from generated Java classes.
 
-Where the generator cannot any useful accessors, no class is generated and the
-containing class will supply `JSONObject`s directly.
+Where the generator cannot identify any useful accessors to build, no class is
+generated and the containing class will supply `JSONObject`s directly.
 
 The generated classes are designed to be as close as possible to idiomatic Java
 as possible. For example, using `is` getters such as `isEnabled` when exposing
