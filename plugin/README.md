@@ -31,7 +31,7 @@ jsonSchemaTypes {
 }
 ```
 
-To your `settings.gradle` file, under `pluginManagement`, make sure JitPack is
+To your `settings.gradle` file, at the top of the file under `pluginManagement`, make sure JitPack is
 listed as a repository.
 
 ```groovy
