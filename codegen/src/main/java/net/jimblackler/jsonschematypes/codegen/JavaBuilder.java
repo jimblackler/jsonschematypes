@@ -18,6 +18,7 @@ import com.helger.jcodemodel.JFieldVar;
 import com.helger.jcodemodel.JInvocation;
 import com.helger.jcodemodel.JMethod;
 import com.helger.jcodemodel.JMod;
+import com.helger.jcodemodel.JNarrowedClass;
 import com.helger.jcodemodel.JPackage;
 import com.helger.jcodemodel.JSwitch;
 import com.helger.jcodemodel.JVar;
@@ -38,12 +39,24 @@ public class JavaBuilder {
   private final AbstractJType dataType;
   private final List<JEnumConstant> enumConstants = new ArrayList<>();
   private final Schema schema;
+  private final String mode;
+  private final AbstractJClass arrayRef;
+  private final AbstractJClass objectRef;
 
-  public JavaBuilder(JavaCodeGenerator javaCodeGenerator, Schema schema)
+  public JavaBuilder(JavaCodeGenerator javaCodeGenerator, Schema schema, String mode)
       throws CodeGenerationException {
     this.schema = schema;
+    this.mode = mode;
     CombinedSchema combinedSchema = new CombinedSchema(schema);
     JCodeModel jCodeModel = javaCodeGenerator.getJCodeModel();
+    if ("org.json".equals(mode)) {
+      objectRef = jCodeModel.ref(JSONObject.class);
+      arrayRef = jCodeModel.ref(JSONArray.class);
+    } else {
+      objectRef = jCodeModel.ref(Map.class).narrow(String.class, Object.class);
+      arrayRef = jCodeModel.ref(List.class).narrow(Object.class);
+    }
+
     JPackage jPackage = javaCodeGenerator.getJPackage();
     javaCodeGenerator.register(schema.getUri(), this);
 
@@ -52,7 +65,7 @@ public class JavaBuilder {
     for (String type : types) {
       switch (type) {
         case "array":
-          compatibleTypes.add(jCodeModel.ref(JSONArray.class));
+          compatibleTypes.add(arrayRef);
           break;
         case "boolean":
           compatibleTypes.add(jCodeModel.BOOLEAN);
@@ -77,7 +90,7 @@ public class JavaBuilder {
           compatibleTypes.add(jCodeModel.ref(Number.class));
           break;
         case "object":
-          compatibleTypes.add(jCodeModel.ref(JSONObject.class));
+          compatibleTypes.add(objectRef);
           break;
         case "string":
           compatibleTypes.add(jCodeModel.ref(String.class));
@@ -88,7 +101,7 @@ public class JavaBuilder {
     }
 
     Schema parentSchema = schema.getParent();
-    final IJClassContainer<JDefinedClass> classParent;
+    IJClassContainer<JDefinedClass> classParent;
     if (parentSchema == null) {
       classParent = jPackage;
     } else {
@@ -100,9 +113,9 @@ public class JavaBuilder {
                                            : jCodeModel.ref(Object.class);
 
     String name = nameForSchema(schema);
-    boolean isComplexObject = dataType.equals(jCodeModel.ref(JSONObject.class))
-        && !combinedSchema.getProperties().isEmpty();
-    boolean isArray = dataType.equals(jCodeModel.ref(JSONArray.class));
+    boolean isComplexObject =
+        dataType.equals(objectRef) && !combinedSchema.getProperties().isEmpty();
+    boolean isArray = dataType.equals(arrayRef);
     if (isComplexObject || isArray) {
       JDefinedClass _class = makeClassForSchema(name,
           (name12)
@@ -135,20 +148,21 @@ public class JavaBuilder {
 
       jDefinedClass.javadoc().add(docs.toString());
 
-      String name1 = dataType.name().replace("JSON", "Json");
-      String dataObjectName = NameUtils.lowerCaseFirst(NameUtils.snakeToCamel(name1));
+      String dataObjectName = getDataTypeName(dataType);
+      String dataObjectNameLowerCase = NameUtils.lowerCaseFirst(dataObjectName);
       JFieldVar dataField =
-          jDefinedClass.field(JMod.PRIVATE | JMod.FINAL, dataType, dataObjectName);
+          jDefinedClass.field(JMod.PRIVATE | JMod.FINAL, dataType, dataObjectNameLowerCase);
 
       /* Constructor */
       JMethod constructor = jDefinedClass.constructor(JMod.PUBLIC);
-      JVar objectParam = constructor.param(dataType, dataObjectName);
+      JVar objectParam = constructor.param(dataType, dataObjectNameLowerCase);
       constructor.body().assign(JExpr._this().ref(dataField), objectParam);
 
       /* Getter */
       JMethod getter = jDefinedClass.method(JMod.PUBLIC, dataType,
-          (dataType.equals(jCodeModel.BOOLEAN) ? "is" : "get") + dataType.name());
-      getter.body()._return(castIfNeeded(dataType, dataType, dataField));
+          (dataType.equals(jCodeModel.BOOLEAN) ? "is" : "get") + dataObjectName);
+      IJExpression expr = smartUnbox(jCodeModel, dataField, dataType);
+      getter.body()._return(expr);
 
       for (Map.Entry<String, Schema> entry : combinedSchema.getProperties().entrySet()) {
         Schema propertySchema = entry.getValue();
@@ -187,9 +201,8 @@ public class JavaBuilder {
       if (types.contains("array")) {
         jDefinedClass.method(JMod.PUBLIC, jCodeModel.INT, "size")
             .body()
-            ._return(JExpr.invoke(
-                castIfNeeded(jCodeModel.ref(JSONArray.class), dataField.type(), dataField),
-                "length"));
+            ._return(JExpr.invoke(castIfNeeded(arrayRef, dataField.type(), dataField),
+                "org.json".equals(mode) ? "length" : "size"));
       }
     } else if (schema.getEnums() != null && dataType.equals(jCodeModel.ref(String.class))) {
       List<Object> enums = schema.getEnums();
@@ -208,6 +221,13 @@ public class JavaBuilder {
       jDefinedClass = null;
       _name = name;
     }
+  }
+
+  static String getDataTypeName(AbstractJType dataType) {
+    if (dataType instanceof JNarrowedClass) {
+      dataType = ((JNarrowedClass) dataType).basis();
+    }
+    return NameUtils.snakeToCamel(dataType.name());
   }
 
   private static String htmlEscape(String description) {
@@ -251,30 +271,32 @@ public class JavaBuilder {
     return requiredType.isAssignableFrom(sourceType) ? source : source.castTo(requiredType);
   }
 
-  private static String getOptOrGet(boolean get, AbstractJType dataType, JCodeModel jCodeModel) {
-    String kind = get ? "get" : "opt";
-    if (dataType.equals(jCodeModel.ref(JSONObject.class))) {
-      return kind + "JSONObject";
-    }
-    if (dataType.equals(jCodeModel.ref(JSONArray.class))) {
-      return kind + "JSONArray";
-    }
-    if (dataType.equals(jCodeModel.BOOLEAN)) {
-      return kind + "Boolean";
-    }
-    if (dataType.equals(jCodeModel.ref(String.class))) {
-      return kind + "String";
-    }
-    if (dataType.equals(jCodeModel.LONG)) {
-      return kind + "Long";
-    }
-    if (dataType.equals(jCodeModel.INT)) {
-      return kind + "Int";
-    }
-    if (dataType.equals(jCodeModel.ref(Number.class))) {
-      return kind + "Number";
-    }
+  private String getOptOrGet(boolean get, AbstractJType dataType, JCodeModel jCodeModel) {
+    if ("org.json".equals(mode)) {
+      String kind = get ? "get" : "opt";
 
+      if (dataType.equals(objectRef)) {
+        return kind + "JSONObject";
+      }
+      if (dataType.equals(arrayRef)) {
+        return kind + "JSONArray";
+      }
+      if (dataType.equals(jCodeModel.BOOLEAN)) {
+        return kind + "Boolean";
+      }
+      if (dataType.equals(jCodeModel.ref(String.class))) {
+        return kind + "String";
+      }
+      if (dataType.equals(jCodeModel.LONG)) {
+        return kind + "Long";
+      }
+      if (dataType.equals(jCodeModel.INT)) {
+        return kind + "Int";
+      }
+      if (dataType.equals(jCodeModel.ref(Number.class))) {
+        return kind + "Number";
+      }
+    }
     return "get";
   }
 
@@ -286,8 +308,7 @@ public class JavaBuilder {
       JDefinedClass holderClass, JFieldVar dataField, String propertyName, JCodeModel jCodeModel) {
     boolean isGet = defaultValue == null;
     String nameForGetters = NameUtils.snakeToCamel(propertyName);
-    IJExpression dataFieldAsJsonObject =
-        castIfNeeded(jCodeModel.ref(JSONObject.class), dataField.type(), dataField);
+    IJExpression dataFieldAsJsonObject = castIfNeeded(objectRef, dataField.type(), dataField);
     if (jDefinedClass == null) {
       if (compatibleTypes.size() == 1) {
         writerPropertyGettersSingle(jCodeModel, holderClass, propertyName, defaultValue, isGet,
@@ -295,7 +316,7 @@ public class JavaBuilder {
       } else {
         for (AbstractJType dataType : compatibleTypes) {
           writerPropertyGettersSingle(jCodeModel, holderClass, propertyName, defaultValue, isGet,
-              nameForGetters, dataFieldAsJsonObject, dataType, dataType.name());
+              nameForGetters, dataFieldAsJsonObject, dataType, getDataTypeName(dataType));
         }
       }
     } else {
@@ -304,7 +325,9 @@ public class JavaBuilder {
     }
     if (!requiredProperty && isGet) {
       JMethod has = holderClass.method(JMod.PUBLIC, jCodeModel.BOOLEAN, "has" + nameForGetters);
-      has.body()._return(JExpr.invoke(dataFieldAsJsonObject, "has").arg(propertyName));
+      has.body()._return(
+          JExpr.invoke(dataFieldAsJsonObject, "org.json".equals(mode) ? "has" : "containsKey")
+              .arg(propertyName));
     }
   }
 
@@ -314,16 +337,24 @@ public class JavaBuilder {
     AbstractJType returnType = jDefinedClass == null ? dataType : jDefinedClass;
     JMethod getter = holderClass.method(JMod.PUBLIC, returnType,
         (returnType.equals(jCodeModel.BOOLEAN) ? "is" : "get") + nameForGetters + qualifier);
-    JInvocation getObject =
+    IJExpression getObject =
         JExpr
             .invoke(dataFieldAsJsonObject,
                 getOptOrGet(isGet, jDefinedClass == null ? dataType : this.dataType, jCodeModel))
             .arg(propertyName);
-    if (defaultValue != null && !defaultValue.equals(JExpr.lit(false))) {
-      getObject.arg(defaultValue);
+    if ("org.json".equals(mode)) {
+      if (defaultValue != null && !defaultValue.equals(JExpr.lit(false))) {
+        ((JInvocation) getObject).arg(defaultValue);
+      }
+    } else {
+      if (!isGet) {
+        getObject = JExpr.cond(JExpr.invoke(dataFieldAsJsonObject, "containsKey").arg(propertyName),
+            getObject, defaultValue);
+      }
     }
-    makeReturn(jCodeModel, getObject, dataType, jDefinedClass == null ? dataType : jDefinedClass,
-        getter.body());
+    makeReturn(jCodeModel, getObject,
+        "org.json".equals(mode) ? dataType : jCodeModel.ref(Object.class),
+        jDefinedClass == null ? dataType : jDefinedClass, getter.body());
   }
 
   private void makeReturn(JCodeModel jCodeModel, IJExpression source, AbstractJType sourceType,
@@ -343,7 +374,9 @@ public class JavaBuilder {
       }
       body._return(toReturn);
     } else if (!enumConstants.isEmpty()) {
-      JVar value = body.decl(jCodeModel.ref(String.class), "value").init(source);
+      IJExpression source1 =
+          "org.json".equals(mode) ? source : source.castTo(jCodeModel.ref(String.class));
+      JVar value = body.decl(jCodeModel.ref(String.class), "value").init(source1);
       List<Object> enums = schema.getEnums();
       JSwitch jSwitch = body._switch(value);
       for (int idx = 0; idx != enums.size(); idx++) {
@@ -358,8 +391,7 @@ public class JavaBuilder {
 
   private void writeItemGetters(JDefinedClass holderClass, int fixedPosition, JFieldVar dataField,
       JCodeModel jCodeModel, IJExpression defaultValue) {
-    IJExpression dataFieldAsJsonArray =
-        castIfNeeded(jCodeModel.ref(JSONArray.class), dataField.type(), dataField);
+    IJExpression dataFieldAsJsonArray = castIfNeeded(arrayRef, dataField.type(), dataField);
 
     if (jDefinedClass == null) {
       if (compatibleTypes.size() == 1) {
@@ -368,7 +400,7 @@ public class JavaBuilder {
       } else {
         for (AbstractJType dataType : compatibleTypes) {
           writeItemGettersSingle(jCodeModel, holderClass, defaultValue, fixedPosition,
-              dataFieldAsJsonArray, dataType, dataType.name());
+              dataFieldAsJsonArray, dataType, getDataTypeName(dataType));
         }
       }
     } else {
@@ -400,10 +432,12 @@ public class JavaBuilder {
     if (defaultValue != null && !defaultValue.equals(JExpr.lit(false))) {
       getObject.arg(defaultValue);
     }
+
     if (jDefinedClass == null) {
-      getter.body()._return(getObject);
+      getter.body()._return(smartUnbox(jCodeModel, getObject, returnType));
     } else {
-      getter.body()._return(JExpr._new(jDefinedClass).arg(getObject));
+      getter.body()._return(
+          JExpr._new(jDefinedClass).arg(smartUnbox(jCodeModel, getObject, this.dataType)));
     }
 
     if (supplement.isEmpty()) {
@@ -422,5 +456,16 @@ public class JavaBuilder {
           iteratorAnonClass.method(JMod.PUBLIC, returnType.boxify(), "next").body());
       iteratorMethod.body()._return(JExpr._new(iteratorAnonClass));
     }
+  }
+
+  public IJExpression smartUnbox(
+      JCodeModel jCodeModel, IJExpression expression, AbstractJType type) {
+    if ("org.json".equals(mode)) {
+      return expression;
+    }
+    if (type.equals(jCodeModel.INT)) {
+      return JExpr.invoke(expression.castTo(jCodeModel.ref(Number.class)), "intValue");
+    }
+    return expression.castTo(type);
   }
 }

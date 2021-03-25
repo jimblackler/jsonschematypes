@@ -31,7 +31,7 @@ public class FromInternet {
         String str = array.getString(idx);
         testsOut.add(DynamicTest.dynamicTest(str, () -> {
           URI uri = URI.create(str);
-          JavaCodeGenerator javaCodeGenerator = new JavaCodeGenerator(uri.getHost());
+          JavaCodeGenerator javaCodeGenerator = new JavaCodeGenerator(uri.getHost(), "org.json");
           TypeScriptCodeGenerator typeScriptCodeGenerator = new TypeScriptCodeGenerator();
           List<CodeGenerator> generators = new ArrayList<>();
           generators.add(javaCodeGenerator);

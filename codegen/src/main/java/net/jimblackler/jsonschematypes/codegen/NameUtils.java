@@ -10,6 +10,10 @@ public class NameUtils {
   }
 
   static String lowerCaseFirst(String in) {
+    // Special case for the word JSON.
+    if (in.startsWith("JSON")) {
+      in = in.replaceFirst("JSON", "Json");
+    }
     return Character.toLowerCase(in.charAt(0)) + in.substring(1);
   }
 

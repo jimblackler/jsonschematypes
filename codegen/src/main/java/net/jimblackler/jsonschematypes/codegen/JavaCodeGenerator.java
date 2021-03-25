@@ -21,9 +21,11 @@ public class JavaCodeGenerator implements CodeGenerator {
   private final Map<URI, JavaBuilder> builtClasses = new HashMap<>();
   private final JCodeModel jCodeModel = new JCodeModel();
   private final JPackage jPackage;
+  private final String mode;
 
-  public JavaCodeGenerator(String packageName) {
+  public JavaCodeGenerator(String packageName, String mode) {
     jPackage = jCodeModel._package(makeJavaLegalPackage(packageName));
+    this.mode = mode;
   }
 
   JavaBuilder get(Schema schema) throws CodeGenerationException {
@@ -35,7 +37,7 @@ public class JavaCodeGenerator implements CodeGenerator {
       return builtClasses.get(uri);
     }
 
-    return new JavaBuilder(this, schema);
+    return new JavaBuilder(this, schema, mode);
   }
 
   public void register(URI uri, JavaBuilder javaBuilder) {

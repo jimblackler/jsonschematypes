@@ -15,7 +15,7 @@ public class ExampleTest {
     FileUtils.createOrEmpty(out);
 
     Path base = FILE_SYSTEM.getPath("/examples");
-    scan(out, "org.example.own", base, "own");
+    scan(out, "org.example.own", base, "own2");
     //    scan(out, "org.example.basic", base, "basic");
     //    scan(out, "org.example.fstab", base, "fstab");
     //    scan(out, "org.example.standard", base, ("standard/7-7-1-1"));
@@ -28,7 +28,7 @@ public class ExampleTest {
   private static void scan(Path out, String namespace, Path base, String append)
       throws CodeGenerationException, IOException {
     Path testDir = base.resolve(append);
-    JavaCodeGenerator javaCodeGenerator = new JavaCodeGenerator(namespace);
+    JavaCodeGenerator javaCodeGenerator = new JavaCodeGenerator(namespace, "map");
     TypeScriptCodeGenerator typeScriptCodeGenerator = new TypeScriptCodeGenerator();
     List<CodeGenerator> generators = new ArrayList<>();
     generators.add(javaCodeGenerator);

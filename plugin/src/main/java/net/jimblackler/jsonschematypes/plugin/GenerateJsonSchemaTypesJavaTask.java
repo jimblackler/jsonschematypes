@@ -32,7 +32,8 @@ public class GenerateJsonSchemaTypesJavaTask extends DefaultTask {
     Path codePath = Common.getCodePath(getProject());
 
     FileUtils.createOrEmpty(codePath);
-    JavaCodeGenerator javaCodeGenerator = new JavaCodeGenerator(extension.getPackageOut());
+    JavaCodeGenerator javaCodeGenerator =
+        new JavaCodeGenerator(extension.getPackageOut(), extension.getMode());
     TypeScriptCodeGenerator typeScriptCodeGenerator = new TypeScriptCodeGenerator();
     List<CodeGenerator> generators = new ArrayList<>();
     generators.add(javaCodeGenerator);
